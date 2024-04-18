@@ -1,0 +1,4 @@
+Business Table: 11481
+Review: 416479
+YelpUser: 192999
+CheckIn: 481360 (from PGAdmin) OR 11083 (from python parser output)
