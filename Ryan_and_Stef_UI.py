@@ -57,23 +57,66 @@ def list_categories(zipcode):
     conn.close()
     return categories
 
-def list_businesses(city, state, zipcode):
+def list_businesses(city, state, zipcode, category=None):
     conn = connect_to_db()
     cur = conn.cursor()
-    cur.execute("""
+    # The SQL query needs to handle an optional category filter
+    query = """
         SELECT b.name, b.address || ', ' || b.city, b.city, ROUND(b.stars::numeric, 1), COUNT(r.review_id), 
                COALESCE(ROUND(AVG(r.stars)::numeric, 1), 0) AS average_rating, COALESCE(SUM(ci.num_checkins), 0)
         FROM Business b
         LEFT JOIN Review r ON b.business_id = r.business_id
         LEFT JOIN CheckIn ci ON b.business_id = ci.business_id
+        LEFT JOIN BusinessCategory bc ON b.business_id = bc.business_id
+        LEFT JOIN Category c ON bc.category_id = c.category_id
         WHERE b.city = %s AND b.state = %s AND b.zipcode = %s
-        GROUP BY b.business_id
-        ORDER BY b.name;
-    """, (city, state, zipcode))
+    """
+    params = [city, state, zipcode]
+    
+    if category:
+        query += " AND c.name = %s"
+        params.append(category)
+        
+    query += " GROUP BY b.business_id ORDER BY b.name;"
+    cur.execute(query, params)
     businesses = cur.fetchall()
     cur.close()
     conn.close()
     return businesses
+
+
+def list_top_categories(zipcode, min_count=5):
+    conn = connect_to_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT c.name, COUNT(*) as business_count
+        FROM Category c
+        JOIN BusinessCategory bc ON c.category_id = bc.category_id
+        JOIN Business b ON bc.business_id = b.business_id
+        WHERE b.zipcode = %s
+        GROUP BY c.name
+        HAVING COUNT(*) >= %s
+        ORDER BY business_count DESC;
+    """, (zipcode, min_count))
+    top_categories = cur.fetchall()
+    cur.close()
+    conn.close()
+    return top_categories
+
+def clear_all():
+    # Clear listboxes
+    state_listbox.delete(0, tk.END)
+    city_listbox.delete(0, tk.END)
+    zipcode_listbox.delete(0, tk.END)
+    category_listbox.delete(0, tk.END)
+    top_categories_listbox.delete(0, tk.END)
+    
+    # Clear the treeview
+    business_treeview.delete(*business_treeview.get_children())
+    
+    # Optionally, you can re-populate the state listbox if needed
+    for state in list_states():
+        state_listbox.insert(tk.END, state[0])
 
 
 
@@ -104,29 +147,58 @@ def on_city_selected(event):
         zipcode_listbox.insert(tk.END, zipcode[0])
 
 def on_zipcode_selected(event):
-    if not zipcode_listbox.curselection():
-        return
-    selected_zipcode = zipcode_listbox.get(zipcode_listbox.curselection())
-    categories = list_categories(selected_zipcode)
+    # Clear previous selections and entries in listboxes and treeview
     category_listbox.delete(0, tk.END)
+    top_categories_listbox.delete(0, tk.END)
     business_treeview.delete(*business_treeview.get_children())
+
+    # Get the currently selected zipcode
+    selected_index = zipcode_listbox.curselection()
+    if not selected_index:
+        return
+    selected_zipcode = zipcode_listbox.get(selected_index)
+
+    # Update categories for the selected zipcode
+    categories = list_categories(selected_zipcode)
     for category in categories:
         category_listbox.insert(tk.END, category[0])
+
+    # Fetch top categories for the selected zipcode
+    top_categories = list_top_categories(selected_zipcode, min_count=5)
+    for category, count in top_categories:
+        category_str = f"{count} - {category}"  # Format: "count - category name"
+        top_categories_listbox.insert(tk.END, category_str)
 
 def on_category_selected(event):
     if not category_listbox.curselection():
         return
     selected_category = category_listbox.get(category_listbox.curselection())
-    selected_state = state_listbox.get(state_listbox.curselection())
-    selected_city = city_listbox.get(city_listbox.curselection())
-    selected_zipcode = zipcode_listbox.get(zipcode_listbox.curselection())
-    if selected_city and selected_state and selected_zipcode and selected_category:
+    selected_state_idx = state_listbox.curselection()
+    selected_city_idx = city_listbox.curselection()
+    selected_zipcode_idx = zipcode_listbox.curselection()
+    
+    # Only proceed if all selections are made
+    if selected_state_idx and selected_city_idx and selected_zipcode_idx and selected_category:
+        selected_state = state_listbox.get(selected_state_idx)
+        selected_city = city_listbox.get(selected_city_idx)
+        selected_zipcode = zipcode_listbox.get(selected_zipcode_idx)
+        
+        # Fetch businesses based on the selections, with the category filter applied
         businesses = list_businesses(selected_city, selected_state, selected_zipcode, selected_category)
         business_treeview.delete(*business_treeview.get_children())
+        
+        # Insert each business into the TreeView
         for business in businesses:
-            # Format the stars value to one decimal place before inserting into the treeview
-            formatted_business = business[:3] + (f"{business[3]:.1f}",) + business[4:]
+            # Format data as needed before insertion into the TreeView
+            formatted_business = (business[0], 
+                                  business[1], 
+                                  business[2], 
+                                  f"{business[3]:.1f}",  # Stars rounded to one decimal place
+                                  business[4],            # Review count
+                                  f"{business[5]:.1f}" if business[5] else "N/A",  # Average rating, check for None
+                                  business[6])            # Number of check-ins
             business_treeview.insert('', 'end', values=formatted_business)
+
 
 def on_search_clicked():
     # Get selected items from the listboxes
@@ -134,6 +206,9 @@ def on_search_clicked():
         selected_state_idx = state_listbox.curselection()[0]
         selected_city_idx = city_listbox.curselection()[0]
         selected_zipcode_idx = zipcode_listbox.curselection()[0]
+        # Check if a category is selected as well
+        selected_category_idx = category_listbox.curselection()
+        selected_category = category_listbox.get(selected_category_idx) if selected_category_idx else None
     except IndexError:
         tk.messagebox.showinfo("Selection Error", "Please select a state, city, and zipcode.")
         return
@@ -142,8 +217,8 @@ def on_search_clicked():
     selected_city = city_listbox.get(selected_city_idx)
     selected_zipcode = zipcode_listbox.get(selected_zipcode_idx)
 
-    # Fetch businesses based on the selections
-    businesses = list_businesses(selected_city, selected_state, selected_zipcode)
+    # Fetch businesses based on the selections, possibly with a category filter applied
+    businesses = list_businesses(selected_city, selected_state, selected_zipcode, selected_category)
     business_treeview.delete(*business_treeview.get_children())
     
     # Insert each business into the TreeView
@@ -157,6 +232,9 @@ def on_search_clicked():
                               f"{business[5]:.1f}" if business[5] else "N/A",  # Average rating, check for None
                               business[6])            # Number of check-ins
         business_treeview.insert('', 'end', values=formatted_business)
+
+
+
 
 
     
@@ -246,6 +324,23 @@ business_treeview.column('num_checkins', minwidth=0, width=130, stretch=tk.NO)
 #Set up the search button
 search_button = ttk.Button(root, text="Search", command=on_search_clicked)
 search_button.grid(row=5, column=0, padx=10, pady=5, sticky='ew')
+
+# Set up the clear button
+clear_button = ttk.Button(root, text="Clear", command=clear_all)
+clear_button.grid(row=6, column=0, padx=10, pady=5, sticky='ew')
+
+# Add a new frame and listbox to display top business categories
+top_categories_frame = tk.Frame(root)
+top_categories_frame.grid(row=1, column=2, rowspan=4, sticky='nsew', padx=10, pady=5)
+top_categories_label = ttk.Label(top_categories_frame, text="Top Categories")
+top_categories_label.pack(side=tk.TOP, fill=tk.X)
+top_categories_scrollbar = ttk.Scrollbar(top_categories_frame, orient=tk.VERTICAL)
+top_categories_listbox = tk.Listbox(top_categories_frame, yscrollcommand=top_categories_scrollbar.set, exportselection=0)
+top_categories_scrollbar.config(command=top_categories_listbox.yview)
+top_categories_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+top_categories_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+
 
 # Populate the state listbox
 for state in list_states():
