@@ -4,12 +4,11 @@ import psycopg2
 
 def connect_to_db():
     try:
-        # Connect to your PostgreSQL database on PgAdmin
         conn = psycopg2.connect(
-            host="localhost",  # or another host if your database is on a different server
-            database="milestone2db",
-            user="postgres",  # Replace with your PgAdmin username
-            password="2312")  # Replace with your PgAdmin password
+            host="localhost",
+            database="milestone3db",
+            user="postgres",
+            password="2312")
         return conn
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
@@ -17,7 +16,7 @@ def connect_to_db():
 def list_states():
     conn = connect_to_db()
     cur = conn.cursor()
-    cur.execute("SELECT DISTINCT state FROM business ORDER BY state;")
+    cur.execute("SELECT DISTINCT state FROM Business ORDER BY state;")
     states = cur.fetchall()
     cur.close()
     conn.close()
@@ -26,7 +25,7 @@ def list_states():
 def list_cities(state):
     conn = connect_to_db()
     cur = conn.cursor()
-    cur.execute("SELECT DISTINCT city FROM business WHERE state = %s ORDER BY city;", (state,))
+    cur.execute("SELECT DISTINCT city FROM Business WHERE state = %s ORDER BY city;", (state,))
     cities = cur.fetchall()
     cur.close()
     conn.close()
@@ -35,10 +34,8 @@ def list_cities(state):
 def list_zipcodes(city):
     conn = connect_to_db()
     cur = conn.cursor()
-    print(city)
-    cur.execute("SELECT DISTINCT zipcode FROM business WHERE city = %s ORDER BY zipcode;", (city,))
+    cur.execute("SELECT DISTINCT zipcode FROM Business WHERE city = %s ORDER BY zipcode;", (city,))
     zipcodes = cur.fetchall()
-    print(zipcodes)
     cur.close()
     conn.close()
     return zipcodes
@@ -46,94 +43,78 @@ def list_zipcodes(city):
 def list_categories(zipcode):
     conn = connect_to_db()
     cur = conn.cursor()
-    print(zipcode)
-    cur.execute("SELECT DISTINCT category FROM business WHERE zipcode = %s ORDER BY category;", (zipcode,))
+    # This query has been updated to correctly join and fetch unique categories for a given zipcode
+    cur.execute("""
+        SELECT DISTINCT c.name 
+        FROM Category c
+        JOIN BusinessCategory bc ON c.category_id = bc.category_id
+        JOIN Business b ON bc.business_id = b.business_id
+        WHERE b.zipcode = %s
+        ORDER BY c.name;
+    """, (zipcode,))
     categories = cur.fetchall()
-    print(categories)
     cur.close()
     conn.close()
     return categories
 
-# def list_businesses(city, state, zipcode, category):
-#     conn = connect_to_db()
-#     cur = conn.cursor()
-#     cur.execute("SELECT name, city, state, zipcode, category FROM business WHERE city = %s AND state = %s AND zipcode = %s AND category = %s ORDER BY name;", (city, state, zipcode, category))
-#     businesses = cur.fetchall()
-#     cur.close()
-#     conn.close()
-#     return businesses
-
-def list_businesses(city, state, zipcode):
+def list_businesses(city, state, zipcode, category):
     conn = connect_to_db()
     cur = conn.cursor()
-    cur.execute("SELECT name, city, state, zipcode FROM business WHERE city = %s AND state = %s AND zipcode = %s ORDER BY name;", (city, state, zipcode))
+    # This query has been updated to include category filtering
+    cur.execute("""
+        SELECT b.name, b.city, b.state, b.zipcode 
+        FROM Business b
+        JOIN BusinessCategory bc ON b.business_id = bc.business_id
+        JOIN Category c ON bc.category_id = c.category_id
+        WHERE b.city = %s AND b.state = %s AND b.zipcode = %s AND c.name = %s
+        ORDER BY b.name;
+    """, (city, state, zipcode, category))
     businesses = cur.fetchall()
     cur.close()
     conn.close()
     return businesses
 
 def on_state_selected(event):
-    # Clear the city listbox
-    city_listbox.delete(0, tk.END)
-    zipcode_listbox.delete(0, tk.END)
-    category_listbox.delete(0, tk.END)
-    business_treeview.delete(*business_treeview.get_children())
-
-    # Get selected state and list cities
+    if not state_listbox.curselection():
+        return
     selected_state = state_listbox.get(state_listbox.curselection())
-    
     cities = list_cities(selected_state)
+    city_listbox.delete(0, tk.END)
     for city in cities:
         city_listbox.insert(tk.END, city[0])
 
 def on_city_selected(event):
-    # Clear the business treeview
-    zipcode_listbox.delete(0, tk.END)
-    category_listbox.delete(0, tk.END)
-    business_treeview.delete(*business_treeview.get_children())
-
-    # Get selected state and city
-    selected_state = state_listbox.get(state_listbox.curselection())
+    if not city_listbox.curselection():
+        return
     selected_city = city_listbox.get(city_listbox.curselection())
-    
     zipcodes = list_zipcodes(selected_city)
+    zipcode_listbox.delete(0, tk.END)
     for zipcode in zipcodes:
         zipcode_listbox.insert(tk.END, zipcode[0])
-    
-    
+
 def on_zipcode_selected(event):
-    # Clear the business treeview
+    if not zipcode_listbox.curselection():
+        return
+    selected_zipcode = zipcode_listbox.get(zipcode_listbox.curselection())
+    categories = list_categories(selected_zipcode)
     category_listbox.delete(0, tk.END)
-    business_treeview.delete(*business_treeview.get_children())
+    for category in categories:
+        category_listbox.insert(tk.END, category[0])
 
-    # Get selected state and city
-    selected_state = state_listbox.get(state_listbox.curselection())
-    selected_city = city_listbox.get(city_listbox.curselection())
-    selected_zipcode = zipcode_listbox.get(zipcode_listbox.curselection())
-    
-    # categories = list_categories(selected_zipcode)
-    # for category in categories:
-    #     category_listbox.insert(tk.END, category[0])
-        
-    if selected_city and selected_state and selected_zipcode:
-        businesses = list_businesses(selected_city, selected_state, selected_zipcode)
-        for business in businesses:
-            business_treeview.insert('', 'end', values=business)
-            
 def on_category_selected(event):
-    # Clear the business treeview
-    business_treeview.delete(*business_treeview.get_children())
-
-    # Get selected state and city
+    if not category_listbox.curselection():
+        return
+    selected_category = category_listbox.get(category_listbox.curselection())
     selected_state = state_listbox.get(state_listbox.curselection())
     selected_city = city_listbox.get(city_listbox.curselection())
     selected_zipcode = zipcode_listbox.get(zipcode_listbox.curselection())
-    selected_category = category_listbox.get(category_listbox.curselection())
-
     if selected_city and selected_state and selected_zipcode and selected_category:
         businesses = list_businesses(selected_city, selected_state, selected_zipcode, selected_category)
+        business_treeview.delete(*business_treeview.get_children())
         for business in businesses:
             business_treeview.insert('', 'end', values=business)
+
+
 
     
 
