@@ -60,13 +60,14 @@ def list_categories(zipcode):
 def list_businesses(city, state, zipcode, category):
     conn = connect_to_db()
     cur = conn.cursor()
-    # This query has been updated to include category filtering
     cur.execute("""
-        SELECT b.name, b.city, b.state, b.zipcode 
+        SELECT b.name, b.address, b.city, ROUND(b.stars::numeric, 1), b.num_reviews, COALESCE(SUM(ci.num_checkins), 0)
         FROM Business b
-        JOIN BusinessCategory bc ON b.business_id = bc.business_id
-        JOIN Category c ON bc.category_id = c.category_id
+        LEFT JOIN BusinessCategory bc ON b.business_id = bc.business_id
+        LEFT JOIN Category c ON bc.category_id = c.category_id
+        LEFT JOIN CheckIn ci ON b.business_id = ci.business_id
         WHERE b.city = %s AND b.state = %s AND b.zipcode = %s AND c.name = %s
+        GROUP BY b.business_id
         ORDER BY b.name;
     """, (city, state, zipcode, category))
     businesses = cur.fetchall()
@@ -74,12 +75,18 @@ def list_businesses(city, state, zipcode, category):
     conn.close()
     return businesses
 
+
+
+
 def on_state_selected(event):
     if not state_listbox.curselection():
         return
     selected_state = state_listbox.get(state_listbox.curselection())
     cities = list_cities(selected_state)
     city_listbox.delete(0, tk.END)
+    zipcode_listbox.delete(0, tk.END)
+    category_listbox.delete(0, tk.END)
+    business_treeview.delete(*business_treeview.get_children())
     for city in cities:
         city_listbox.insert(tk.END, city[0])
 
@@ -89,6 +96,8 @@ def on_city_selected(event):
     selected_city = city_listbox.get(city_listbox.curselection())
     zipcodes = list_zipcodes(selected_city)
     zipcode_listbox.delete(0, tk.END)
+    category_listbox.delete(0, tk.END)
+    business_treeview.delete(*business_treeview.get_children())
     for zipcode in zipcodes:
         zipcode_listbox.insert(tk.END, zipcode[0])
 
@@ -98,6 +107,7 @@ def on_zipcode_selected(event):
     selected_zipcode = zipcode_listbox.get(zipcode_listbox.curselection())
     categories = list_categories(selected_zipcode)
     category_listbox.delete(0, tk.END)
+    business_treeview.delete(*business_treeview.get_children())
     for category in categories:
         category_listbox.insert(tk.END, category[0])
 
@@ -112,7 +122,9 @@ def on_category_selected(event):
         businesses = list_businesses(selected_city, selected_state, selected_zipcode, selected_category)
         business_treeview.delete(*business_treeview.get_children())
         for business in businesses:
-            business_treeview.insert('', 'end', values=business)
+            # Format the stars value to one decimal place before inserting into the treeview
+            formatted_business = business[:3] + (f"{business[3]:.1f}",) + business[4:]
+            business_treeview.insert('', 'end', values=formatted_business)
 
 
 
@@ -130,11 +142,11 @@ header_label.grid(row=0, column=0, padx=10, pady=5)
 
 # Set up the state listbox with a label
 state_frame = tk.Frame(root)
-state_frame.grid(row=1, column=0, sticky='nwes', padx=10)
+state_frame.grid(row=0, column=0, sticky='nwes', padx=10)
 state_label = ttk.Label(state_frame, text="State")
 state_label.pack(side=tk.TOP, fill=tk.X)
 state_scrollbar = ttk.Scrollbar(state_frame, orient=tk.VERTICAL)
-state_listbox = tk.Listbox(state_frame, yscrollcommand=state_scrollbar.set, exportselection=0)
+state_listbox = tk.Listbox(state_frame, height=10, yscrollcommand=state_scrollbar.set, exportselection=0)
 state_scrollbar.config(command=state_listbox.yview)
 state_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 state_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -142,7 +154,7 @@ state_listbox.bind("<<ListboxSelect>>", on_state_selected)
 
 # Set up the city listbox with a label
 city_frame = tk.Frame(root)
-city_frame.grid(row=2, column=0, sticky='nwes', padx=10)
+city_frame.grid(row=1, column=0, sticky='nwes', padx=10)
 city_label = ttk.Label(city_frame, text="City")
 city_label.pack(side=tk.TOP, fill=tk.X)
 city_scrollbar = ttk.Scrollbar(city_frame, orient=tk.VERTICAL)
@@ -177,20 +189,32 @@ category_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 category_listbox.bind("<<ListboxSelect>>", on_category_selected)
 
 
+# Set up the business treeview with the corrected columns
+business_frame = tk.Frame(root)
+business_frame.grid(row=0, column=1, rowspan=5, sticky='nsew', padx=10, pady=5)
+business_treeview = ttk.Treeview(business_frame, columns=("name", "address", "city", "stars", "review_count", "num_checkins"), show='headings')
+business_treeview.pack(fill=tk.BOTH, expand=True)
+
+# Configure column headings
+business_treeview.heading('name', text='Business Name')
+business_treeview.heading('address', text='Address')
+business_treeview.heading('city', text='City')
+business_treeview.heading('stars', text='Stars')
+business_treeview.heading('review_count', text='Review Count')
+business_treeview.heading('num_checkins', text='Number of Check-ins')
+
+# Configure column widths (you can adjust these as needed)
+business_treeview.column('name', minwidth=0, width=200, stretch=tk.NO)
+business_treeview.column('address', minwidth=0, width=200, stretch=tk.NO)
+business_treeview.column('city', minwidth=0, width=100, stretch=tk.NO)
+business_treeview.column('stars', minwidth=0, width=50, stretch=tk.NO)
+business_treeview.column('review_count', minwidth=0, width=100, stretch=tk.NO)
+business_treeview.column('num_checkins', minwidth=0, width=130, stretch=tk.NO)
+
+
+
 # Populate the state listbox
 for state in list_states():
     state_listbox.insert(tk.END, state[0])
-
-# Set up the business treeview with headings
-business_frame = tk.Frame(root)
-business_frame.grid(row=0, column=1, rowspan=3, sticky='nwes', padx=10, pady=10)
-business_treeview = ttk.Treeview(business_frame, columns=("business", "city", "state"), show='headings')
-business_treeview.heading('business', text='Business')
-business_treeview.heading('city', text='City')
-business_treeview.heading('state', text='State')
-business_treeview.column('business', stretch=tk.YES, minwidth=100, width=200)
-business_treeview.column('city', stretch=tk.YES, minwidth=100, width=100)
-business_treeview.column('state', stretch=tk.YES, minwidth=50, width=50)
-business_treeview.pack(fill=tk.BOTH, expand=True)
 
 root.mainloop()
