@@ -39,6 +39,13 @@ CREATE TABLE IF NOT EXISTS Category (
     name          TEXT NOT NULL UNIQUE
 );
 
+CREATE TABLE IF NOT EXISTS ZipcodeStats (
+    zipcode TEXT PRIMARY KEY,
+    population INTEGER,
+    average_income DECIMAL
+);
+
+
 CREATE TABLE IF NOT EXISTS BusinessCategory (
     business_id    TEXT NOT NULL,
     category_id    INTEGER NOT NULL,
@@ -46,6 +53,7 @@ CREATE TABLE IF NOT EXISTS BusinessCategory (
     FOREIGN KEY (business_id) REFERENCES Business (business_id) ON DELETE CASCADE,
     FOREIGN KEY (category_id) REFERENCES Category (category_id) ON DELETE CASCADE
 );
+
 
 -- Example: Filtering businesses in a specific city and category
 SELECT 

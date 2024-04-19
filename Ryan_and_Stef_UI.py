@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import psycopg2
+from scipy import stats
 
 def connect_to_db():
     try:
@@ -8,7 +9,7 @@ def connect_to_db():
             host="localhost",
             database="milestone3db",
             user="postgres",
-            password="2312")
+            password="2321")
         return conn
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
@@ -103,6 +104,21 @@ def list_top_categories(zipcode, min_count=5):
     conn.close()
     return top_categories
 
+def list_zipcode_stats(zipcode):
+    conn = connect_to_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT b.zipcode, COUNT(b.business_id) AS num_businesses, zs.population, zs.average_income
+        FROM Business b
+        LEFT JOIN ZipcodeStats zs ON b.zipcode = zs.zipcode
+        WHERE b.zipcode = %s
+        GROUP BY b.zipcode, zs.population, zs.average_income;
+    """, (zipcode,))
+    stats = cur.fetchone()
+    cur.close()
+    conn.close()
+    return stats
+
 def clear_all():
     # Clear listboxes
     state_listbox.delete(0, tk.END)
@@ -157,7 +173,16 @@ def on_zipcode_selected(event):
     if not selected_index:
         return
     selected_zipcode = zipcode_listbox.get(selected_index)
-
+    stats = list_zipcode_stats(selected_zipcode)
+    if stats:
+        num_businesses, population, avg_income = stats[1], stats[2], stats[3]
+        num_businesses_label.config(text=f"Number of Businesses: {num_businesses}")
+        population_label.config(text=f"Total Population: {population}")
+        avg_income_label.config(text=f"Average Income: ${avg_income:.2f}" if avg_income else "Average Income: N/A")
+    else:
+        num_businesses_label.config(text="Number of Businesses: N/A")
+        population_label.config(text="Total Population: N/A")
+        avg_income_label.config(text="Average Income: N/A")
     # Update categories for the selected zipcode
     categories = list_categories(selected_zipcode)
     for category in categories:
@@ -324,6 +349,18 @@ business_treeview.column('num_checkins', minwidth=0, width=130, stretch=tk.NO)
 #Set up the search button
 search_button = ttk.Button(root, text="Search", command=on_search_clicked)
 search_button.grid(row=5, column=0, padx=10, pady=5, sticky='ew')
+
+# Set up the zipcode statistics frame
+stats_frame = tk.Frame(root)
+stats_frame.grid(row=1, column=3, rowspan=4, sticky='nsew', padx=10, pady=5)
+stats_label = ttk.Label(stats_frame, text="Zipcode Statistics")
+stats_label.pack(side=tk.TOP, fill=tk.X)
+num_businesses_label = ttk.Label(stats_frame, text="Number of Businesses: ")
+num_businesses_label.pack(side=tk.TOP, anchor='w')
+population_label = ttk.Label(stats_frame, text="Total Population: ")
+population_label.pack(side=tk.TOP, anchor='w')
+avg_income_label = ttk.Label(stats_frame, text="Average Income: ")
+avg_income_label.pack(side=tk.TOP, anchor='w')
 
 # Set up the clear button
 clear_button = ttk.Button(root, text="Clear", command=clear_all)
