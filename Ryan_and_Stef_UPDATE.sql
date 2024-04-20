@@ -16,10 +16,3 @@ stars = COALESCE((
     FROM Review
     WHERE Review.business_id = Business.business_id
 ), 0);
-
-UPDATE ZipcodeStats
-SET population = COALESCE((
-    SELECT COUNT(*)
-    FROM Business
-    WHERE Business.zipcode = ZipcodeStats.zipcode
-), 0);

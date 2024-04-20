@@ -9,7 +9,7 @@ def connect_to_db():
             host="localhost",
             database="milestone3db",
             user="postgres",
-            password="2321")
+            password="ramram69")
         return conn
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
@@ -108,11 +108,11 @@ def list_zipcode_stats(zipcode):
     conn = connect_to_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT b.zipcode, COUNT(b.business_id) AS num_businesses, zs.population, zs.average_income
+        SELECT b.zipcode, COUNT(b.business_id) AS num_businesses, zs.medianIncome, zs.meanincome, zs.population
         FROM Business b
         LEFT JOIN ZipcodeStats zs ON b.zipcode = zs.zipcode
         WHERE b.zipcode = %s
-        GROUP BY b.zipcode, zs.population, zs.average_income;
+        GROUP BY b.zipcode, zs.medianIncome, zs.meanincome, zs.population;
     """, (zipcode,))
     stats = cur.fetchone()
     cur.close()
@@ -134,6 +134,93 @@ def clear_all():
     for state in list_states():
         state_listbox.insert(tk.END, state[0])
 
+def get_popular_businesses(zipcode):
+    conn = connect_to_db()
+    cur = conn.cursor()
+    # Make sure to replace placeholders with actual variable where necessary.
+    cur.execute("""
+        SELECT 
+        b.name,
+        ROUND(AVG(b.stars)::numeric, 2) AS average_stars,
+        SUM(ci.num_checkins) AS total_checkins
+    FROM 
+        Business b
+    JOIN 
+        BusinessCategory bc ON b.business_id = bc.business_id
+    JOIN 
+        Category c ON bc.category_id = c.category_id
+    JOIN 
+        CheckIn ci ON b.business_id = ci.business_id
+    WHERE
+        b.zipcode = %s
+    GROUP BY 
+        b.business_id
+    HAVING 
+        AVG(b.stars) >= (SELECT AVG(b2.stars) 
+                        FROM Business b2
+                        WHERE b2.zipcode = b.zipcode)
+        AND 
+        SUM(ci.num_checkins) >= (SELECT AVG(ci2.total_checkins)
+                                FROM (SELECT b2.business_id, SUM(ci2.num_checkins) AS total_checkins
+                                    FROM Business b2
+                                    JOIN CheckIn ci2 ON b2.business_id = ci2.business_id
+                                    WHERE b2.zipcode = b.zipcode
+                                    GROUP BY b2.business_id) AS ci2)
+    ORDER BY 
+        total_checkins DESC, average_stars DESC;
+    """, [zipcode])
+    popular_businesses = cur.fetchall()
+    cur.close()
+    conn.close()
+    return popular_businesses
+
+# Function to update the popular businesses treeview
+def update_popular_businesses(zipcode):
+    # Clear the treeview
+    for i in popular_businesses_treeview.get_children():
+        popular_businesses_treeview.delete(i)
+    # Run the query to get popular businesses
+    popular_businesses = get_popular_businesses(zipcode)
+    # Insert the results into the treeview
+    for business in popular_businesses:
+        popular_businesses_treeview.insert('', 'end', values=(business[0], business[1], business[2]))
+
+def get_successful_businesses(zipcode):
+    conn = connect_to_db()
+    cur = conn.cursor()
+    # Adjust the SQL to calculate the earliest review date and total review and check-in counts
+    cur.execute("""
+        SELECT
+            b.name,
+            MIN(r.date) AS start_date,
+            COUNT(DISTINCT r.review_id) as review_count,
+            SUM(ci.num_checkins) as checkin_count
+        FROM
+            Business b
+            LEFT JOIN Review r ON b.business_id = r.business_id
+            LEFT JOIN CheckIn ci ON b.business_id = ci.business_id
+        WHERE
+            b.zipcode = %s
+        GROUP BY
+            b.business_id
+        ORDER BY
+            start_date ASC, review_count DESC, checkin_count DESC;
+    """, (zipcode,))
+    successful_businesses = cur.fetchall()
+    cur.close()
+    conn.close()
+    return successful_businesses
+
+# Function to update the successful businesses treeview
+def update_successful_businesses(zipcode):
+    # Clear the treeview
+    for i in successful_businesses_treeview.get_children():
+        successful_businesses_treeview.delete(i)
+    # Run the query to get successful businesses
+    successful_businesses = get_successful_businesses(zipcode)
+    # Insert the results into the treeview
+    for business in successful_businesses:
+        successful_businesses_treeview.insert('', 'end', values=(business[0], business[1], business[2], business[3]))
 
 
 
@@ -175,7 +262,7 @@ def on_zipcode_selected(event):
     selected_zipcode = zipcode_listbox.get(selected_index)
     stats = list_zipcode_stats(selected_zipcode)
     if stats:
-        num_businesses, population, avg_income = stats[1], stats[2], stats[3]
+        num_businesses, population, avg_income = stats[1], stats[4], stats[3]
         num_businesses_label.config(text=f"Number of Businesses: {num_businesses}")
         population_label.config(text=f"Total Population: {population}")
         avg_income_label.config(text=f"Average Income: ${avg_income:.2f}" if avg_income else "Average Income: N/A")
@@ -258,7 +345,21 @@ def on_search_clicked():
                               business[6])            # Number of check-ins
         business_treeview.insert('', 'end', values=formatted_business)
 
-
+# Function to update both popular and successful businesses treeview
+def update_business_views(zipcode):
+    # Clear the treeviews
+    popular_businesses_treeview.delete(*popular_businesses_treeview.get_children())
+    successful_businesses_treeview.delete(*successful_businesses_treeview.get_children())
+    
+    # Run the queries to get popular and successful businesses
+    popular_businesses = get_popular_businesses(zipcode)
+    successful_businesses = get_successful_businesses(zipcode)
+    
+    # Insert the results into the treeviews
+    for business in popular_businesses:
+        popular_businesses_treeview.insert('', 'end', values=(business[0], business[1], business[2]))
+    for business in successful_businesses:
+        successful_businesses_treeview.insert('', 'end', values=(business[0], business[1], business[2], business[3]))
 
 
 
@@ -352,7 +453,7 @@ search_button.grid(row=5, column=0, padx=10, pady=5, sticky='ew')
 
 # Set up the zipcode statistics frame
 stats_frame = tk.Frame(root)
-stats_frame.grid(row=1, column=3, rowspan=4, sticky='nsew', padx=10, pady=5)
+stats_frame.grid(row=0, column=2, rowspan=4, sticky='nsew', padx=10, pady=5)
 stats_label = ttk.Label(stats_frame, text="Zipcode Statistics")
 stats_label.pack(side=tk.TOP, fill=tk.X)
 num_businesses_label = ttk.Label(stats_frame, text="Number of Businesses: ")
@@ -377,6 +478,55 @@ top_categories_scrollbar.config(command=top_categories_listbox.yview)
 top_categories_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 top_categories_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+# Frame for the popular businesses
+popular_businesses_frame = ttk.Frame(root)
+popular_businesses_frame.grid(row=0, column=3, rowspan=5, padx=10, pady=5, sticky="nsew")
+
+# Label for the popular businesses frame
+popular_businesses_label = ttk.Label(popular_businesses_frame, text="Popular Businesses")
+popular_businesses_label.pack(side="top", fill="x")
+
+# Treeview for the popular businesses
+popular_businesses_treeview = ttk.Treeview(popular_businesses_frame, columns=("Business Name", "Stars", "Number of Check-ins"), show='headings')
+popular_businesses_treeview.heading('Business Name', text='Business Name')
+popular_businesses_treeview.heading('Stars', text='Stars')
+popular_businesses_treeview.heading('Number of Check-ins', text='Number of Check-ins')
+
+# Configuring the column headings
+popular_businesses_treeview.column('Business Name', anchor='center', width=200)
+popular_businesses_treeview.column('Stars', anchor='center', width=100)
+popular_businesses_treeview.column('Number of Check-ins', anchor='center', width=120)
+
+# Packing the treeview into the frame
+popular_businesses_treeview.pack(side="top", fill="both", expand=True)
+
+# Frame for the successful businesses
+successful_businesses_frame = ttk.Frame(root)
+successful_businesses_frame.grid(row=0, column=4, rowspan=5, padx=10, pady=5, sticky="nsew")
+
+# Label for the successful businesses frame
+successful_businesses_label = ttk.Label(successful_businesses_frame, text="Successful Businesses")
+successful_businesses_label.pack(side="top", fill="x")
+
+# Treeview for the successful businesses
+successful_businesses_treeview = ttk.Treeview(successful_businesses_frame, columns=("Business Name", "Start Date", "Review Count", "Check-in Count"), show='headings')
+successful_businesses_treeview.heading('Business Name', text='Business Name')
+successful_businesses_treeview.heading('Start Date', text='Start Date')
+successful_businesses_treeview.heading('Review Count', text='Review Count')
+successful_businesses_treeview.heading('Check-in Count', text='Check-in Count')
+
+# Configuring the column headings
+successful_businesses_treeview.column('Business Name', anchor='center', width=200)
+successful_businesses_treeview.column('Start Date', anchor='center', width=100)
+successful_businesses_treeview.column('Review Count', anchor='center', width=100)
+successful_businesses_treeview.column('Check-in Count', anchor='center', width=120)
+
+# Packing the treeview into the frame
+successful_businesses_treeview.pack(side="top", fill="both", expand=True)
+
+# Set up the refresh button for both popular and successful businesses
+refresh_button = ttk.Button(root, text="Refresh Business Views", command=lambda: update_business_views(zipcode_listbox.get(zipcode_listbox.curselection())))
+refresh_button.grid(row=7, column=3, padx=10, pady=5, sticky='ew')
 
 
 # Populate the state listbox

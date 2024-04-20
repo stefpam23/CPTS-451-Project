@@ -38,11 +38,11 @@ CREATE TABLE IF NOT EXISTS Category (
     category_id   SERIAL PRIMARY KEY,
     name          TEXT NOT NULL UNIQUE
 );
-
 CREATE TABLE IF NOT EXISTS ZipcodeStats (
-    zipcode TEXT PRIMARY KEY,
-    population INTEGER,
-    average_income DECIMAL
+    zipcode VARCHAR(5) PRIMARY KEY,
+    medianIncome INT,
+    meanIncome INT,
+    population INT
 );
 
 
