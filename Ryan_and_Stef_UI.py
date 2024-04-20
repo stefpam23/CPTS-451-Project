@@ -9,7 +9,7 @@ def connect_to_db():
             host="localhost",
             database="milestone3db",
             user="postgres",
-            password="ramram69")
+            password="2321")
         return conn
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
