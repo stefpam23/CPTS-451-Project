@@ -7,7 +7,7 @@ def connect_to_db():
             host="localhost",
             database="milestone3db",
             user="postgres",
-            password="2321")
+            password="ramram69")
         return conn
     except (Exception, psycopg2.DatabaseError) as error:
         print(f"Database connection error: {error}")
@@ -54,11 +54,12 @@ def parseBusinessData(data, cur):
 
 
 def parseReviewData(data, cur):
-    sql_str = "INSERT INTO Review (review_id, business_id, stars, text) VALUES (%s, %s, %s, %s)"
+    sql_str = "INSERT INTO Review (review_id, business_id, stars, date, text) VALUES (%s, %s, %s, %s, %s)"
     cur.execute(sql_str, (
         data['review_id'],
         data['business_id'],
         data['stars'],
+        data['date'],
         data['text']
     ))
 
@@ -87,10 +88,10 @@ def main():
     cur = conn.cursor()
 
     try:
-        parse_file('./Yelp-CptS451/yelp_business.JSON', lambda data: parseBusinessData(data, cur))
+        #parse_file('./Yelp-CptS451/yelp_business.JSON', lambda data: parseBusinessData(data, cur))
         parse_file('./Yelp-CptS451/yelp_review.JSON', lambda data: parseReviewData(data, cur))
-        parse_file('./Yelp-CptS451/yelp_user.JSON', lambda data: parseUserData(data, cur))
-        parse_file('./Yelp-CptS451/yelp_checkin.JSON', lambda data: parseCheckinData(data, cur))
+        #parse_file('./Yelp-CptS451/yelp_user.JSON', lambda data: parseUserData(data, cur))
+        #parse_file('./Yelp-CptS451/yelp_checkin.JSON', lambda data: parseCheckinData(data, cur))
         conn.commit()
     except Exception as e:
         print(f"An error occurred: {e}")

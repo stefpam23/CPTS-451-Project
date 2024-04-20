@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS Review (
     review_id       TEXT,
     business_id     TEXT,
     stars           FLOAT DEFAULT 0,
+    date            TEXT,
     text            TEXT,
     PRIMARY KEY (review_id, business_id),
     FOREIGN KEY (business_id) REFERENCES Business (business_id)
